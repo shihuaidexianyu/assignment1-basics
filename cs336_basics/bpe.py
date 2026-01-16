@@ -42,9 +42,13 @@ class tokenizer:
 
     def pretokenize(self, text: str) -> list[str]:
         """Split text into pre-tokens using the GPT-2 regex."""
+        # 之前的错误：这里直接把 regex 结果 encode 成 bytes，
+        # 导致后续 BPE 把“整段 bytes”当成一个 token 来合并，unicode 会失配。
         return list(_GPT2_PATTERN.findall(text))
 
     def _iter_special_segments(self, text: str) -> list[tuple[bool, str]]:
+        # 之前的错误：没有先切分 special token，导致 <|endoftext|> 被 regex 切碎，
+        # 最终找不到 vocab 里的整 token。
         if not self._sorted_special_tokens:
             return [(False, text)]
 
@@ -74,6 +78,9 @@ class tokenizer:
 
     @lru_cache(maxsize=10000)
     def _bpe(self, token_bytes: bytes) -> tuple[bytes, ...]:
+        # 之前的错误：按 merges 列表“全局反复扫一遍”合并，
+        # 而不是按 merge rank 在当前 token 内部逐步合并。
+        # 正确做法是：始终选 rank 最小的 pair 进行合并。
         if not token_bytes:
             return tuple()
         if len(token_bytes) == 1:
@@ -132,6 +139,7 @@ class tokenizer:
         return token_ids
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
+        # 之前的错误：yield 出 list[int]，但测试期望逐个 token id 流式输出。
         for text in iterable:
             yield from self.encode(text)
 
