@@ -33,7 +33,7 @@ def save_tokenizer(
     out_dir.mkdir(parents=True, exist_ok=True)
     byte_encoder = _bytes_to_unicode()
 
-    vocab_out = { _encode_token_bytes(token_bytes, byte_encoder): token_id for token_id, token_bytes in vocab.items() }
+    vocab_out = {_encode_token_bytes(token_bytes, byte_encoder): token_id for token_id, token_bytes in vocab.items()}
     vocab_path = out_dir / vocab_filename
     with vocab_path.open("w", encoding="utf-8") as f:
         json.dump(vocab_out, f, ensure_ascii=False, indent=2)
@@ -63,7 +63,9 @@ def parse_args() -> argparse.Namespace:
         help="Special token to reserve (repeatable).",
     )
     parser.add_argument("--num-workers", type=int, default=16, help="Number of workers for pre-tokenization.")
-    parser.add_argument("--out-dir", default="/home/hw/learn/assignment1-basics/tokenizer_out", help="Output directory.")
+    parser.add_argument(
+        "--out-dir", default="/home/hw/learn/assignment1-basics/tokenizer_out", help="Output directory."
+    )
     return parser.parse_args()
 
 

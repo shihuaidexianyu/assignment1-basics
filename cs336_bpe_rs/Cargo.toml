@@ -1,0 +1,13 @@
+[package]
+name = "cs336_bpe_rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cs336_bpe_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+onig = "6"
+rayon = "1.10"

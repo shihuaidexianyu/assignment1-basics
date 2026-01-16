@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.4"]
+build-backend = "maturin"
+
+[project]
+name = "cs336_bpe_rs"
+version = "0.1.0"
+description = "Rust-accelerated pretokenization for CS336 BPE"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.maturin]
+module-name = "cs336_bpe_rs"
+features = ["pyo3/extension-module"]

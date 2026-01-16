@@ -5,6 +5,8 @@
 ### a
 
 I tarin my bpe on TinyStoriesV2-GPT4-train. The resource is following:
+time=12m56s,memory consume=713444KB
+time=13m14s,memory consume=1296040KB
 
 ```text
 ❯ /usr/bin/time -v uv run /home/hw/learn/assignment1-basics/train.py --input /home/hw/learn/assignment1-basics/data/data/TinyStoriesV2-GPT4-train.txt --vocab-size 10000 --num-workers 16 --out-dir /home/hw/learn/assignment1-basics/tokenizer_out_10000
