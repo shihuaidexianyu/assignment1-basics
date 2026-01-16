@@ -141,4 +141,33 @@ Saved merges to /home/hw/learn/assignment1-basics/tokenizer_out_10000/tokenizer_
         Exit status: 0
 ```
 
+```text
+❯ /usr/bin/time -v uv run /home/hw/learn/assignment1-basics/train.py --input /home/hw/learn/assignment1-basics/data/data/TinyStoriesV2-GPT4-train.txt --vocab-size 10000 --num-workers 16 --out-dir /home/hw/learn/assignment1-basics/tokenizer_out_10000
+Saved vocab to /home/hw/learn/assignment1-basics/tokenizer_out_10000/tokenizer_vocab.json
+Saved merges to /home/hw/learn/assignment1-basics/tokenizer_out_10000/tokenizer_merges.txt
+        Command being timed: "uv run /home/hw/learn/assignment1-basics/train.py --input /home/hw/learn/assignment1-basics/data/data/TinyStoriesV2-GPT4-train.txt --vocab-size 10000 --num-workers 16 --out-dir /home/hw/learn/assignment1-basics/tokenizer_out_10000"
+        User time (seconds): 431.63
+        System time (seconds): 48.87
+        Percent of CPU this job got: 183%
+        Elapsed (wall clock) time (h:mm:ss or m:ss): 4:22.21
+        Average shared text size (kbytes): 0
+        Average unshared data size (kbytes): 0
+        Average stack size (kbytes): 0
+        Average total size (kbytes): 0
+        Maximum resident set size (kbytes): 13919448
+        Average resident set size (kbytes): 0
+        Major (requiring I/O) page faults: 689691
+        Minor (reclaiming a frame) page faults: 10155231
+        Voluntary context switches: 699619
+        Involuntary context switches: 24391
+        Swaps: 0
+        File system inputs: 46916352
+        File system outputs: 536
+        Socket messages sent: 0
+        Socket messages received: 0
+        Signals delivered: 0
+        Page size (bytes): 4096
+        Exit status: 0
+```
+
 ### b

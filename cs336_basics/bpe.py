@@ -6,9 +6,7 @@ from functools import lru_cache
 try:
     import regex as re
 
-    _GPT2_PATTERN = re.compile(
-        r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    )
+    _GPT2_PATTERN = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
 except ImportError:  # pragma: no cover - fallback for environments without regex
     import re
 
