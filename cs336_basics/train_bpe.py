@@ -197,6 +197,7 @@ def train_bpe_parallel(
     id_to_bytes: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}
 
     print("Starting Merge Iterations...")
+    
     for i in range(target_merges):
         # a. 统计 Pair 频率
         pairs = get_stats(vocab_counts)
@@ -228,7 +229,8 @@ def train_bpe_parallel(
         vocab_counts = merge_vocab(best_pair, vocab_counts, current_token_id)
         
         current_token_id += 1
-        
+    longest_token=max(id_to_bytes.values(), key=len)
+    print(f"Longest token length after training: {len(longest_token)} bytes")
     print("Training Complete.")
     return merges, vocab_counts
 
