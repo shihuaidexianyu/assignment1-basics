@@ -1,8 +1,10 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 
 use onig::Regex;
+use pyo3::buffer::PyBuffer;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
@@ -49,13 +51,31 @@ fn split_non_special_segments<'a>(text: &'a str, special_tokens: &[String]) -> V
     segments
 }
 
-#[pyfunction]
-fn pretokenize_and_count(text: &str, special_tokens: Vec<String>) -> PyResult<Vec<(Vec<u8>, u64)>> {
+fn text_from_bytes(bytes: &[u8]) -> Cow<'_, str> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => Cow::Owned(decode_utf8_ignore(bytes)),
+    }
+}
+
+fn buffer_as_bytes<'py>(py: Python<'py>, buffer: &PyBuffer<u8>) -> PyResult<&'py [u8]> {
+    let slice = buffer.as_slice(py).ok_or_else(|| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "buffer is not C-contiguous; cannot provide zero-copy view",
+        )
+    })?;
+    let ptr = slice.as_ptr() as *const u8;
+    let len = slice.len();
+    // SAFETY: PyBuffer enforces lifetime tied to Python GIL and we only read.
+    Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
+fn pretokenize_and_count_impl(text: &str, special_tokens: &[String]) -> PyResult<Vec<(Vec<u8>, u64)>> {
     let pat = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
     let re = Regex::new(pat).map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
     let mut counts: HashMap<Vec<u8>, u64> = HashMap::new();
-    let segments = split_non_special_segments(text, &special_tokens);
+    let segments = split_non_special_segments(text, special_tokens);
 
     for segment in segments {
         for m in re.find_iter(segment) {
@@ -66,6 +86,22 @@ fn pretokenize_and_count(text: &str, special_tokens: Vec<String>) -> PyResult<Ve
     }
 
     Ok(counts.into_iter().collect())
+}
+
+#[pyfunction]
+fn pretokenize_and_count(text: &str, special_tokens: Vec<String>) -> PyResult<Vec<(Vec<u8>, u64)>> {
+    pretokenize_and_count_impl(text, &special_tokens)
+}
+
+#[pyfunction]
+fn pretokenize_and_count_from_buffer(
+    py: Python<'_>,
+    data: PyBuffer<u8>,
+    special_tokens: Vec<String>,
+) -> PyResult<Vec<(Vec<u8>, u64)>> {
+    let bytes = buffer_as_bytes(py, &data)?;
+    let text = text_from_bytes(bytes);
+    pretokenize_and_count_impl(text.as_ref(), &special_tokens)
 }
 
 fn merge_ids(ids: &[u32], p0: u32, p1: u32, new_id: u32) -> Vec<u32> {
@@ -104,21 +140,15 @@ fn lex_compare(a: &[u8], b: &[u8]) -> Ordering {
     a.len().cmp(&b.len())
 }
 
-#[pyfunction]
-#[pyo3(signature = (input_path, vocab_size, special_tokens, num_threads=0))]
-fn train_bpe(
-    input_path: &str,
-    vocab_size: usize,
-    special_tokens: Vec<String>,
+fn collect_token_counts(
+    text: &str,
+    special_tokens: &[String],
     num_threads: usize,
-) -> PyResult<(Vec<(u32, Vec<u8>)>, Vec<(Vec<u8>, Vec<u8>)>)> {
-    let data = fs::read(input_path).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-    let text = decode_utf8_ignore(&data);
-
+) -> PyResult<HashMap<Vec<u8>, u64>> {
     let pat = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
     let re = Regex::new(pat).map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
-    let segments = split_non_special_segments(&text, &special_tokens);
+    let segments = split_non_special_segments(text, special_tokens);
     let collect_counts = || {
         segments
             .par_iter()
@@ -139,15 +169,24 @@ fn train_bpe(
             })
     };
 
-    let token_counts = if num_threads > 0 {
+    if num_threads > 0 {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .build()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        pool.install(collect_counts)
+        Ok(pool.install(collect_counts))
     } else {
-        collect_counts()
-    };
+        Ok(collect_counts())
+    }
+}
+
+fn train_bpe_impl(
+    text: &str,
+    vocab_size: usize,
+    special_tokens: Vec<String>,
+    num_threads: usize,
+) -> PyResult<(Vec<(u32, Vec<u8>)>, Vec<(Vec<u8>, Vec<u8>)>)> {
+    let token_counts = collect_token_counts(text, &special_tokens, num_threads)?;
 
     let base_vocab_size = 256 + special_tokens.len();
     if vocab_size < base_vocab_size {
@@ -249,9 +288,38 @@ fn train_bpe(
     Ok((vocab_items, merges))
 }
 
+#[pyfunction]
+#[pyo3(signature = (input_path, vocab_size, special_tokens, num_threads=0))]
+fn train_bpe(
+    input_path: &str,
+    vocab_size: usize,
+    special_tokens: Vec<String>,
+    num_threads: usize,
+) -> PyResult<(Vec<(u32, Vec<u8>)>, Vec<(Vec<u8>, Vec<u8>)>)> {
+    let data = fs::read(input_path).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+    let text = text_from_bytes(&data);
+    train_bpe_impl(text.as_ref(), vocab_size, special_tokens, num_threads)
+}
+
+#[pyfunction]
+#[pyo3(signature = (data, vocab_size, special_tokens, num_threads=0))]
+fn train_bpe_from_buffer(
+    py: Python<'_>,
+    data: PyBuffer<u8>,
+    vocab_size: usize,
+    special_tokens: Vec<String>,
+    num_threads: usize,
+) -> PyResult<(Vec<(u32, Vec<u8>)>, Vec<(Vec<u8>, Vec<u8>)>)> {
+    let bytes = buffer_as_bytes(py, &data)?;
+    let text = text_from_bytes(bytes);
+    train_bpe_impl(text.as_ref(), vocab_size, special_tokens, num_threads)
+}
+
 #[pymodule]
 fn cs336_bpe_rs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pretokenize_and_count, m)?)?;
+    m.add_function(wrap_pyfunction!(pretokenize_and_count_from_buffer, m)?)?;
     m.add_function(wrap_pyfunction!(train_bpe, m)?)?;
+    m.add_function(wrap_pyfunction!(train_bpe_from_buffer, m)?)?;
     Ok(())
 }

@@ -7,9 +7,15 @@ import functools
 try:
     from cs336_bpe_rs import pretokenize_and_count as rust_pretokenize_and_count
     from cs336_bpe_rs import train_bpe as rust_train_bpe
+    from cs336_bpe_rs import pretokenize_and_count_from_buffer as rust_pretokenize_and_count_from_buffer
+    from cs336_bpe_rs import train_bpe_from_buffer as rust_train_bpe_from_buffer
+
+    print("use rust extension for bpe training")
 except Exception:
     rust_pretokenize_and_count = None
     rust_train_bpe = None
+    rust_pretokenize_and_count_from_buffer = None
+    rust_train_bpe_from_buffer = None
 
 # 尝试导入 regex 库 (支持 \p{L} 等高级特性)，如果不存在则回退到 re
 try:
@@ -293,7 +299,25 @@ def train_bpe(
     special_tokens = special_tokens or []
     if rust_train_bpe is not None:
         num_threads = kwargs.get("num_workers", 0)
-        vocab_items, merges = rust_train_bpe(str(input_path), vocab_size, special_tokens, num_threads)
+        if rust_train_bpe_from_buffer is not None:
+            try:
+                import mmap
+
+                if os.path.getsize(input_path) > 0:
+                    with open(input_path, "rb") as f:
+                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                            vocab_items, merges = rust_train_bpe_from_buffer(
+                                mm,
+                                vocab_size,
+                                special_tokens,
+                                num_threads,
+                            )
+                else:
+                    vocab_items, merges = rust_train_bpe(str(input_path), vocab_size, special_tokens, num_threads)
+            except Exception:
+                vocab_items, merges = rust_train_bpe(str(input_path), vocab_size, special_tokens, num_threads)
+        else:
+            vocab_items, merges = rust_train_bpe(str(input_path), vocab_size, special_tokens, num_threads)
         vocab = {token_id: bytes(token_bytes) for token_id, token_bytes in vocab_items}
         merges = [(bytes(a), bytes(b)) for a, b in merges]
         return vocab, merges
