@@ -180,8 +180,26 @@ def train_bpe(
     special_tokens: list[str] | None = None,
     num_workers: int = 4,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    """
-    BPE 训练主入口
+    """Given the path to an input corpus, run train a BPE tokenizer and
+    output its vocabulary and merges.
+
+    Args:
+        input_path (str | os.PathLike): Path to BPE tokenizer training data.
+        vocab_size (int): Total number of items in the tokenizer's vocabulary (including special tokens).
+        special_tokens (list[str]): A list of string special tokens to be added to the tokenizer vocabulary.
+            These strings will never be split into multiple tokens, and will always be
+            kept as a single token. If these special tokens occur in the `input_path`,
+            they are treated as any other string.
+
+    Returns:
+        tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+            vocab:
+                The trained tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
+                to bytes (token bytes)
+            merges:
+                BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
+                representing that <token1> was merged with <token2>.
+                Merges are ordered by order of creation.
     """
     # 计算分块边界
     # 假设特殊 token 是 <|endoftext|>，如果不包含，可以传空 bytes 或其他
@@ -205,10 +223,14 @@ def train_bpe(
             global_vocab_counts.update(_process_chunk_worker(args))
     # BPE 迭代 (Serial Merge 阶段)
     # 初始 token 0-255
+    # 初始化 vocab，包含基础字节和特殊 token
+    vocab = {int(i): bytes([i]) for i in range(0, 256)}
     merges = []
-    # 从 256 开始分配新 ID (假设是 byte-level BPE)
-    current_token_id = 256
+    # 从 base_vocab_size 开始分配新 ID (避免覆盖特殊 token)
+    current_token_id = 256 + len(special_tokens)
+    # 加上特殊 token 的数量
     base_vocab_size = 256 + len(special_tokens)
+    # 计算需要的合并次数
     target_merges = vocab_size - base_vocab_size
     if target_merges < 0:
         raise ValueError("vocab_size too small for base vocabulary + special tokens")
@@ -216,6 +238,9 @@ def train_bpe(
     vocab_counts = dict(global_vocab_counts)
     id_to_bytes: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
 
+    for i, token in enumerate(special_tokens, start=256):
+        id_to_bytes[i] = token.encode("utf-8")
+        vocab[i] = token.encode("utf-8")
     for i in range(target_merges):
         # a. 统计 Pair 频率
         pairs = get_stats(vocab_counts)
@@ -231,13 +256,14 @@ def train_bpe(
                 id_to_bytes[p[1]],
             ),
         )
-        # c. 记录合并规则
-        merges.append((best_pair, current_token_id))
+        # c. 记录合并规则（以 bytes 对形式返回）
+        merges.append((id_to_bytes[best_pair[0]], id_to_bytes[best_pair[1]]))
         id_to_bytes[current_token_id] = id_to_bytes[best_pair[0]] + id_to_bytes[best_pair[1]]
 
         # d. 更新词表
         # 这一步是单线程的，但因为是在 len(vocab) 上操作，通常很快
         vocab_counts = merge_vocab(best_pair, vocab_counts, current_token_id)
+        vocab[current_token_id] = id_to_bytes[current_token_id]
 
         current_token_id += 1
-    return merges, vocab_counts
+    return vocab, merges
